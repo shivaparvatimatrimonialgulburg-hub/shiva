@@ -6,6 +6,15 @@ import multer from "multer";
 import fs from "fs";
 import crypto from "crypto";
 import axios from "axios";
+import { v4 as uuid } from 'uuid';
+import { 
+  StandardCheckoutClient, 
+  Env, 
+  MetaInfo, 
+  StandardCheckoutPayRequest,
+  CreateSdkOrderRequest,
+  RefundRequest
+} from '@phonepe-pg/pg-sdk-node';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -36,6 +45,27 @@ async function startServer() {
   app.use(express.json());
   app.use("/uploads", express.static(uploadsDir));
 
+  // PhonePe Client Initialization
+  const phonepeClientId = process.env.PHONEPE_CLIENT_ID || "";
+  const phonepeClientSecret = process.env.PHONEPE_CLIENT_SECRET || "";
+  const phonepeClientVersion = parseInt(process.env.PHONEPE_CLIENT_VERSION || "1", 10);
+  const phonepeEnv = process.env.PHONEPE_ENV === "PRODUCTION" ? Env.PRODUCTION : Env.SANDBOX;
+
+  let phonepeClient: any = null;
+  if (phonepeClientId && phonepeClientSecret) {
+    try {
+      phonepeClient = StandardCheckoutClient.getInstance(
+        phonepeClientId,
+        phonepeClientSecret,
+        phonepeClientVersion,
+        phonepeEnv
+      );
+      console.log("PhonePe SDK initialized successfully");
+    } catch (error) {
+      console.error("Failed to initialize PhonePe SDK:", error);
+    }
+  }
+
   // Mock Database
   const db = {
     users: [
@@ -48,6 +78,28 @@ async function startServer() {
         status: "approved",
         package: "diamond",
         paymentStatus: "paid",
+        reports: 0
+      },
+      { 
+        id: "owner-admin", 
+        email: "shivaparvatimatrimonialgulburg@gmail.com",
+        password: "password",
+        role: "admin", 
+        fullName: "Owner Admin",
+        status: "approved",
+        package: "diamond",
+        paymentStatus: "paid",
+        reports: 0
+      },
+      { 
+        id: "user-1", 
+        email: "user@gmail.com",
+        password: "password",
+        role: "user", 
+        fullName: "Test User",
+        status: "approved",
+        package: "free",
+        paymentStatus: "unpaid",
         reports: 0
       }
     ],
@@ -71,6 +123,16 @@ async function startServer() {
     interests: [] as any[],
     likes: [] as any[],
     connectRequests: [] as any[], // For tracking share/chat requests
+    transactions: [
+      { 
+        id: "MT123456789", 
+        userId: "admin-1", 
+        packageId: "gold", 
+        amount: 150000, 
+        status: "COMPLETED", 
+        timestamp: new Date().toISOString() 
+      }
+    ] as any[], // For tracking payments
     settings: {
       homeBanners: [
         "https://images.unsplash.com/photo-1583939003579-730e3918a45a?q=80&w=1920&auto=format&fit=crop",
@@ -150,6 +212,19 @@ async function startServer() {
   
   app.get("/api/admin/logs/requests", (req, res) => res.json(db.requestLogs));
   app.get("/api/admin/logs/chats", (req, res) => res.json(db.chatLogs));
+  
+  app.get("/api/admin/payments", (req, res) => {
+    const payments = db.transactions.map(t => {
+      const user = db.users.find(u => u.id === t.userId);
+      return {
+        ...t,
+        userName: user?.fullName || "Unknown User",
+        email: user?.email || "N/A"
+      };
+    });
+    res.json(payments);
+  });
+
   app.get("/api/admin/support", (req, res) => res.json(db.supportTickets));
   app.get("/api/admin/requests", (req, res) => res.json(db.connectRequests));
   
@@ -213,14 +288,9 @@ async function startServer() {
     const pkg = db.masterData.packages.find(p => p.id === packageId);
     if (!pkg) return res.status(400).json({ error: "Invalid package" });
 
-    const merchantId = process.env.PHONEPE_MERCHANT_ID;
-    const saltKey = process.env.PHONEPE_SALT_KEY;
-    const saltIndex = process.env.PHONEPE_SALT_INDEX || "1";
-    const host = process.env.PHONEPE_HOST || "https://api-preprod.phonepe.com/apis/hermes";
-
-    // If keys are missing, use mock flow
-    if (!merchantId || !saltKey) {
-      console.warn("PhonePe keys missing, using mock flow");
+    // If SDK is not initialized, use mock flow
+    if (!phonepeClient) {
+      console.warn("PhonePe SDK not initialized, using mock flow");
       const mockTxnId = `MT-MOCK-${Date.now()}`;
       return res.json({
         success: true,
@@ -229,160 +299,143 @@ async function startServer() {
       });
     }
 
-    const merchantTransactionId = `MT${Date.now()}`;
-    // Improved price parsing: extract numbers and handle decimals
-    const priceMatch = pkg.price.match(/[\d,.]+/);
-    const numericPrice = priceMatch ? parseFloat(priceMatch[0].replace(/,/g, "")) : 0;
-    const amountInPaisa = Math.round(numericPrice * 100);
-
-    const payload = {
-      merchantId,
-      merchantTransactionId,
-      merchantUserId: userId,
-      amount: amountInPaisa,
-      redirectUrl: `https://${req.get("host")}/payment-status?id=${merchantTransactionId}`,
-      redirectMode: "REDIRECT",
-      callbackUrl: `https://${req.get("host")}/api/payments/callback`,
-      paymentInstrument: {
-        type: "PAY_PAGE"
-      }
-    };
-
-    const base64Payload = Buffer.from(JSON.stringify(payload)).toString("base64");
-    const stringToHash = base64Payload + "/pg/v1/pay" + saltKey;
-    const sha256 = crypto.createHash("sha256").update(stringToHash).digest("hex");
-    const checksum = sha256 + "###" + saltIndex;
-
     try {
-      const response = await axios.post(
-        `${host}/pg/v1/pay`,
-        { request: base64Payload },
-        {
-          headers: {
-            "Content-Type": "application/json",
-            "X-VERIFY": checksum,
-            accept: "application/json"
-          }
-        }
-      );
+      const merchantOrderId = uuid();
+      const priceMatch = pkg.price.match(/[\d,.]+/);
+      const numericPrice = priceMatch ? parseFloat(priceMatch[0].replace(/,/g, "")) : 0;
+      const amountInPaisa = Math.round(numericPrice * 100);
+
+      const request = StandardCheckoutPayRequest.builder()
+        .merchantOrderId(merchantOrderId)
+        .amount(amountInPaisa)
+        .redirectUrl(`https://${req.get("host")}/payment-status?id=${merchantOrderId}`)
+        .message(`Subscription for ${pkg.name} package`)
+        .build();
+
+      const response = await phonepeClient.pay(request);
+      
+      // Store transaction record
+      db.transactions.push({
+        id: merchantOrderId,
+        userId,
+        packageId,
+        amount: amountInPaisa,
+        status: 'PENDING',
+        timestamp: new Date().toISOString()
+      });
 
       res.json({
         success: true,
-        paymentUrl: response.data.data.instrumentResponse.redirectInfo.url,
-        transactionId: merchantTransactionId
+        paymentUrl: response.redirectUrl,
+        transactionId: merchantOrderId,
+        phonepeOrderId: response.orderId
       });
     } catch (error: any) {
-      const errorData = error.response?.data;
-      console.error("PhonePe Error:", errorData || error.message);
+      console.error("PhonePe SDK Pay Error:", error);
       res.status(500).json({ 
         error: "Payment initiation failed", 
-        details: errorData?.message || error.message,
-        code: errorData?.code
+        message: error.message 
       });
     }
   });
 
   app.post("/api/payments/callback", (req, res) => {
+    const authorizationHeader = req.headers['authorization'] as string;
+    const body = JSON.stringify(req.body);
+    
+    const username = process.env.PHONEPE_CALLBACK_USERNAME;
+    const password = process.env.PHONEPE_CALLBACK_PASSWORD;
+
+    if (!phonepeClient || !username || !password) {
+      console.log("Mocking callback verification");
+      return res.status(200).send("OK");
+    }
+
     try {
-      const { response } = req.body;
-      if (response) {
-        const decodedResponse = JSON.parse(Buffer.from(response, 'base64').toString());
-        console.log("PhonePe Server Callback:", decodedResponse);
-        
-        // In a real app, you would verify the checksum here and update the database
-        // const { success, code, data } = decodedResponse;
-        // if (success && code === 'PAYMENT_SUCCESS') { ... }
-      }
+      const callbackResponse = phonepeClient.validateCallback(
+        username,
+        password,
+        authorizationHeader,
+        body
+      );
+
+      console.log("Verified PhonePe Callback:", callbackResponse);
+      const { orderId, state } = callbackResponse.payload;
+      
+      // Update DB based on state...
+      
       res.status(200).send("OK");
     } catch (error) {
-      console.error("Callback Error:", error);
-      res.status(500).send("Error");
+      console.error("Callback Verification Failed:", error);
+      res.status(401).send("Unauthorized");
     }
   });
 
-  // PhonePe Status API
-  app.get("/api/payments/status/:merchantTransactionId", async (req, res) => {
-    const { merchantTransactionId } = req.params;
-    const merchantId = process.env.PHONEPE_MERCHANT_ID;
-    const saltKey = process.env.PHONEPE_SALT_KEY;
-    const saltIndex = process.env.PHONEPE_SALT_INDEX || "1";
-    const host = process.env.PHONEPE_HOST || "https://api-preprod.phonepe.com/apis/hermes";
+  app.get("/api/payments/status/:merchantOrderId", async (req, res) => {
+    const { merchantOrderId } = req.params;
 
-    if (!merchantId || !saltKey) {
-      return res.json({ success: true, status: "COMPLETED", mock: true });
+    if (!phonepeClient) {
+      return res.json({ success: true, state: "COMPLETED", mock: true });
     }
 
-    const stringToHash = `/pg/v1/status/${merchantId}/${merchantTransactionId}${saltKey}`;
-    const sha256 = crypto.createHash("sha256").update(stringToHash).digest("hex");
-    const checksum = sha256 + "###" + saltIndex;
-
     try {
-      const response = await axios.get(
-        `${host}/pg/v1/status/${merchantId}/${merchantTransactionId}`,
-        {
-          headers: {
-            "Content-Type": "application/json",
-            "X-VERIFY": checksum,
-            "X-MERCHANT-ID": merchantId,
-            accept: "application/json"
+      const response = await phonepeClient.getOrderStatus(merchantOrderId);
+      
+      // Update our database if status is COMPLETED
+      if (response.state === 'COMPLETED') {
+        const txnIndex = db.transactions.findIndex(t => t.id === merchantOrderId);
+        if (txnIndex !== -1) {
+          const txn = db.transactions[txnIndex];
+          db.transactions[txnIndex].status = 'COMPLETED';
+
+          // Update user package
+          const userIndex = db.users.findIndex(u => u.id === txn.userId);
+          if (userIndex !== -1) {
+            db.users[userIndex].package = txn.packageId;
+            db.users[userIndex].paymentStatus = 'paid';
+            
+            // Also update profile
+            const profileIndex = db.profiles.findIndex(p => p.uid === txn.userId);
+            if (profileIndex !== -1) {
+              db.profiles[profileIndex].package = txn.packageId;
+            }
           }
         }
-      );
-      res.json(response.data);
+      }
+
+      res.json(response);
     } catch (error: any) {
-      const errorData = error.response?.data;
-      console.error("PhonePe Status Error:", errorData || error.message);
+      console.error("PhonePe SDK Status Error:", error);
       res.status(500).json({ 
         error: "Failed to fetch payment status",
-        details: errorData?.message || error.message,
-        code: errorData?.code
+        message: error.message 
       });
     }
   });
 
-  // PhonePe Refund API
   app.post("/api/payments/refund", async (req, res) => {
-    const { transactionId, amount, userId } = req.body;
-    const merchantId = process.env.PHONEPE_MERCHANT_ID;
-    const saltKey = process.env.PHONEPE_SALT_KEY;
-    const saltIndex = process.env.PHONEPE_SALT_INDEX || "1";
-    const host = process.env.PHONEPE_HOST || "https://api-preprod.phonepe.com/apis/hermes";
+    const { merchantOrderId, amount } = req.body;
 
-    if (!merchantId || !saltKey) {
-      return res.json({ success: true, message: "Refund initiated (Mock)" });
+    if (!phonepeClient) {
+      return res.json({ success: true, message: "Refund initiated (Mock)", state: "PENDING" });
     }
 
-    const merchantTransactionId = `REF${Date.now()}`;
-    const payload = {
-      merchantId,
-      merchantUserId: userId,
-      merchantTransactionId,
-      originalTransactionId: transactionId,
-      amount: amount * 100, // Convert to paisa
-      callbackUrl: `${req.protocol}://${req.get("host")}/api/payments/refund-callback`
-    };
-
-    const base64Payload = Buffer.from(JSON.stringify(payload)).toString("base64");
-    const stringToHash = base64Payload + "/pg/v1/refund" + saltKey;
-    const sha256 = crypto.createHash("sha256").update(stringToHash).digest("hex");
-    const checksum = sha256 + "###" + saltIndex;
-
     try {
-      const response = await axios.post(
-        `${host}/pg/v1/refund`,
-        { request: base64Payload },
-        {
-          headers: {
-            "Content-Type": "application/json",
-            "X-VERIFY": checksum,
-            accept: "application/json"
-          }
-        }
-      );
-      res.json(response.data);
+      const refundId = uuid();
+      const request = RefundRequest.builder()
+        .amount(amount * 100)
+        .merchantRefundId(refundId)
+        .originalMerchantOrderId(merchantOrderId)
+        .build();
+
+      const response = await phonepeClient.refund(request);
+      res.json(response);
     } catch (error: any) {
-      console.error("PhonePe Refund Error:", error.response?.data || error.message);
-      res.status(500).json({ error: "Refund initiation failed" });
+      console.error("PhonePe SDK Refund Error:", error);
+      res.status(500).json({ 
+        error: "Refund initiation failed",
+        message: error.message 
+      });
     }
   });
 
@@ -416,11 +469,15 @@ async function startServer() {
 
   app.post("/api/auth/login", (req, res) => {
     const { email, password } = req.body;
-    const user = db.users.find(u => u.email === email && u.password === password);
+    if (!email || !password) {
+      return res.status(400).json({ error: "Email and password are required" });
+    }
+    const cleanEmail = email.toLowerCase().trim();
+    const user = db.users.find(u => u.email.toLowerCase().trim() === cleanEmail && u.password === password);
     if (user) {
       res.json({ user });
     } else {
-      res.status(401).json({ error: "Invalid credentials" });
+      res.status(401).json({ error: "Invalid credentials. Please check your email and password." });
     }
   });
 
@@ -436,6 +493,23 @@ async function startServer() {
     db.users.push(newUser);
     db.profiles.push({ ...userData, uid: newUser.id, status });
     res.json({ user: newUser });
+  });
+
+  app.patch("/api/profiles/:id", (req, res) => {
+    const { id } = req.params;
+    const index = db.profiles.findIndex(p => p.id === id || p.uid === id);
+    if (index !== -1) {
+      db.profiles[index] = { ...db.profiles[index], ...req.body };
+      // Also update user record if it's a shared field
+      const uIndex = db.users.findIndex(u => u.id === db.profiles[index].uid);
+      if (uIndex !== -1) {
+        if (req.body.fullName) db.users[uIndex].fullName = req.body.fullName;
+        if (req.body.email) db.users[uIndex].email = req.body.email;
+      }
+      res.json(db.profiles[index]);
+    } else {
+      res.status(404).json({ error: "Profile not found" });
+    }
   });
 
   app.get("/api/profiles", (req, res) => {

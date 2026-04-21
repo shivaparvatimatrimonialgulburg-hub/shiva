@@ -178,9 +178,11 @@ export default function UserDashboard() {
             )}
           </Badge>
           {!profile?.isPremium && (
-            <Button className="bg-secondary text-secondary-foreground hover:bg-secondary/90 font-bold">
-              Upgrade to Premium
-            </Button>
+            <Link to="/dashboard/upgrade">
+              <Button className="bg-secondary text-secondary-foreground hover:bg-secondary/90 font-bold">
+                Upgrade to Premium
+              </Button>
+            </Link>
           )}
         </div>
       </div>

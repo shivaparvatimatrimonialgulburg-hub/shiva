@@ -5,10 +5,12 @@ import { Button } from '@/components/ui/button';
 import { CheckCircle2, XCircle, Loader2 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { paymentService } from '@/services/paymentService';
+import { useAuth } from '@/hooks/useAuth';
 
 export default function PaymentStatus() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  const { refreshProfile } = useAuth();
   const [status, setStatus] = useState<'loading' | 'success' | 'failed'>('loading');
   const [errorDetails, setErrorDetails] = useState<string | null>(null);
   const transactionId = searchParams.get('id');
@@ -23,9 +25,10 @@ export default function PaymentStatus() {
 
       try {
         const data = await paymentService.checkTransactionStatus(transactionId);
-        // PhonePe status codes: PAYMENT_SUCCESS, PAYMENT_ERROR, PAYMENT_PENDING, etc.
-        if (data.code === 'PAYMENT_SUCCESS' || data.status === 'COMPLETED' || data.mock) {
+        // PhonePe status codes: PENDING, FAILED, COMPLETED
+        if (data.state === 'COMPLETED' || data.code === 'PAYMENT_SUCCESS' || data.status === 'COMPLETED' || data.mock) {
           setStatus('success');
+          refreshProfile();
         } else {
           setStatus('failed');
           setErrorDetails(data.message || data.error || 'The payment was not successful.');

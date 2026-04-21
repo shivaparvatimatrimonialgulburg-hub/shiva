@@ -68,6 +68,7 @@ export default function AdminDashboard() {
     packages: []
   });
   const [users, setUsers] = useState<any[]>([]);
+  const [payments, setPayments] = useState<any[]>([]);
   const [logs, setLogs] = useState({ requests: [], chats: [], connectRequests: [] });
   const [tickets, setTickets] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
@@ -139,18 +140,20 @@ export default function AdminDashboard() {
 
   const fetchData = async () => {
     try {
-      const [settingsRes, masterRes, usersRes, reqLogsRes, chatLogsRes, ticketsRes, connectReqsRes] = await Promise.all([
+      const [settingsRes, masterRes, usersRes, reqLogsRes, chatLogsRes, ticketsRes, connectReqsRes, paymentsRes] = await Promise.all([
         fetch('/api/settings'),
         fetch('/api/master-data'),
         fetch('/api/admin/users'),
         fetch('/api/admin/logs/requests'),
         fetch('/api/admin/logs/chats'),
         fetch('/api/admin/support'),
-        fetch('/api/admin/logs/connect-requests')
+        fetch('/api/admin/logs/connect-requests'),
+        fetch('/api/admin/payments')
       ]);
       setSettings(await settingsRes.json());
       setMasterData(await masterRes.json());
       setUsers(await usersRes.json());
+      setPayments(await paymentsRes.json());
       setLogs({
         requests: await reqLogsRes.json(),
         chats: await chatLogsRes.json(),
@@ -871,6 +874,7 @@ export default function AdminDashboard() {
                 <Table>
                   <TableHeader>
                     <TableRow>
+                      <TableHead>Date</TableHead>
                       <TableHead>Transaction ID</TableHead>
                       <TableHead>User</TableHead>
                       <TableHead>Amount</TableHead>
@@ -879,17 +883,17 @@ export default function AdminDashboard() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {/* Mocked recent payments for UI demonstration */}
-                    {[
-                      { id: 'MT1712750000000', user: 'Rahul P.', amount: '₹1,500', status: 'SUCCESS' },
-                      { id: 'MT1712751000000', user: 'Sneha K.', amount: '₹2,500', status: 'PENDING' },
-                    ].map((p) => (
+                    {payments.map((p) => (
                       <TableRow key={p.id}>
+                        <TableCell className="text-xs">{new Date(p.timestamp).toLocaleString()}</TableCell>
                         <TableCell className="font-mono text-xs">{p.id}</TableCell>
-                        <TableCell>{p.user}</TableCell>
-                        <TableCell>{p.amount}</TableCell>
                         <TableCell>
-                          <Badge variant={p.status === 'SUCCESS' ? 'default' : 'outline'}>
+                          <div className="font-medium">{p.userName}</div>
+                          <div className="text-[10px] text-muted-foreground">{p.email}</div>
+                        </TableCell>
+                        <TableCell>₹{(p.amount / 100).toLocaleString()}</TableCell>
+                        <TableCell>
+                          <Badge variant={p.status === 'COMPLETED' ? 'default' : 'outline'}>
                             {p.status}
                           </Badge>
                         </TableCell>
@@ -902,15 +906,19 @@ export default function AdminDashboard() {
                                     method: 'POST',
                                     headers: { 'Content-Type': 'application/json' },
                                     body: JSON.stringify({
-                                      transactionId: p.id,
-                                      amount: parseInt(p.amount.replace(/[^0-9]/g, "")),
-                                      userId: 'mock-user'
+                                      merchantOrderId: p.id,
+                                      amount: p.amount / 100
                                     })
                                   });
-                                  const data = await res.json();
-                                  toast.success("Refund initiated!");
+                                  const result = await res.json();
+                                  if (res.ok) {
+                                    toast.success("Refund initiated!");
+                                    fetchData();
+                                  } else {
+                                    toast.error(result.message || "Refund failed");
+                                  }
                                 } catch (e) {
-                                  toast.error("Refund failed");
+                                  toast.error("Error initiating refund");
                                 }
                               }
                             }}>
@@ -920,6 +928,13 @@ export default function AdminDashboard() {
                         </TableCell>
                       </TableRow>
                     ))}
+                    {payments.length === 0 && (
+                      <TableRow>
+                        <TableCell colSpan={6} className="text-center py-10 text-muted-foreground">
+                          No transactions found.
+                        </TableCell>
+                      </TableRow>
+                    )}
                   </TableBody>
                 </Table>
               </div>

@@ -8,7 +8,8 @@ import {
   Settings, 
   Shield, 
   MessageSquare,
-  FileText
+  FileText,
+  Crown
 } from 'lucide-react';
 import UserDashboard from './UserDashboard';
 import ManagerDashboard from './ManagerDashboard';
@@ -19,6 +20,7 @@ import Messages from './Messages';
 import Reports from './Reports';
 import HelpCenter from './HelpCenter';
 import ManageUsers from './ManageUsers';
+import UpgradePlan from './UpgradePlan';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
@@ -44,6 +46,7 @@ export default function Dashboard() {
     { icon: User, label: 'My Profile', path: '/dashboard/profile' },
     { icon: Heart, label: 'My Matches', path: '/dashboard/matches' },
     { icon: MessageSquare, label: 'Messages', path: '/dashboard/messages' },
+    { icon: Crown, label: 'Upgrade Plan', path: '/dashboard/upgrade' },
   ];
 
   if (isManager || isAdmin) {
@@ -105,6 +108,7 @@ export default function Dashboard() {
           <Route path="/messages" element={<Messages />} />
           <Route path="/manage-users" element={<ManageUsers />} />
           <Route path="/admin" element={<AdminDashboard />} />
+          <Route path="/upgrade" element={<UpgradePlan />} />
           <Route path="/reports" element={<Reports />} />
           <Route path="/help" element={<HelpCenter />} />
         </Routes>

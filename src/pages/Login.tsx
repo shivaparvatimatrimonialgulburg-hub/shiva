@@ -23,8 +23,9 @@ export default function Login() {
       toast.success("Welcome back!");
       navigate('/dashboard');
     } catch (error: any) {
-      console.error(error);
-      toast.error(error.message || "Login failed. Please check your credentials.");
+      console.error("Login component error:", error);
+      const message = error.message || "Login failed. Please check your credentials.";
+      toast.error(message);
     } finally {
       setLoading(false);
     }

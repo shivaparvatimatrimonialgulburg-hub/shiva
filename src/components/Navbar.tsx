@@ -71,13 +71,15 @@ export default function Navbar() {
             <div className="flex items-center space-x-4 ml-4">
               {user ? (
                 <DropdownMenu>
-                  <DropdownMenuTrigger render={<Button variant="ghost" className="relative h-10 w-10 rounded-full border-2 border-secondary/30 hover:border-secondary" />}>
-                    <Avatar className="h-9 w-9">
-                      <AvatarImage src={profile?.profileImageUrl} alt={profile?.fullName} />
-                      <AvatarFallback className="bg-secondary text-primary font-bold">
-                        {profile?.fullName?.charAt(0) || user.email?.charAt(0).toUpperCase()}
-                      </AvatarFallback>
-                    </Avatar>
+                  <DropdownMenuTrigger>
+                    <div className="relative h-10 w-10 rounded-full border-2 border-secondary/30 hover:border-secondary overflow-hidden cursor-pointer">
+                      <Avatar className="h-full w-full">
+                        <AvatarImage src={profile?.profileImageUrl} alt={profile?.fullName} />
+                        <AvatarFallback className="bg-secondary text-primary font-bold">
+                          {profile?.fullName?.charAt(0) || user.email?.charAt(0).toUpperCase()}
+                        </AvatarFallback>
+                      </Avatar>
+                    </div>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent className="w-56" align="end">
                     <DropdownMenuGroup>
