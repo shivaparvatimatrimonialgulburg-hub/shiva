@@ -11,7 +11,8 @@ import {
   Info,
   MessageSquare,
   Share2,
-  CheckCircle2
+  CheckCircle2,
+  Printer
 } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 
@@ -181,6 +182,9 @@ export default function ProfileModal({
                 <Share2 className="mr-2 h-5 w-5" /> Share Info
               </Button>
 
+              <Button variant="outline" className="h-12 px-4 border-muted" onClick={() => window.print()}>
+                <Printer className="h-5 w-5" />
+              </Button>
               <Button variant="ghost" className="h-12 px-6" onClick={onClose}>
                 Close
               </Button>

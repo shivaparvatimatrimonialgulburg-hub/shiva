@@ -120,6 +120,9 @@ async function startServer() {
     chatLogs: [
       { id: "c1", from: "user-1", to: "user-2", message: "Hello, interested in your profile.", timestamp: new Date().toISOString() }
     ],
+    messages: [
+      { id: "m1", fromId: "user-1", toId: "user-2", content: "Hello, interested in your profile.", timestamp: new Date().toISOString() }
+    ] as any[],
     interests: [] as any[],
     likes: [] as any[],
     connectRequests: [] as any[], // For tracking share/chat requests
@@ -211,7 +214,18 @@ async function startServer() {
   });
   
   app.get("/api/admin/logs/requests", (req, res) => res.json(db.requestLogs));
-  app.get("/api/admin/logs/chats", (req, res) => res.json(db.chatLogs));
+  app.get("/api/admin/logs/chats", (req, res) => {
+    const logsWithNames = db.chatLogs.map(log => {
+      const fromUser = db.users.find(u => u.id === log.from);
+      const toUser = db.users.find(u => u.id === log.to);
+      return {
+        ...log,
+        fromName: fromUser?.fullName || log.from,
+        toName: toUser?.fullName || log.to
+      };
+    });
+    res.json(logsWithNames);
+  });
   
   app.get("/api/admin/payments", (req, res) => {
     const payments = db.transactions.map(t => {
@@ -439,9 +453,65 @@ async function startServer() {
     }
   });
 
+  app.get("/api/messages/:userId", (req, res) => {
+    const { userId } = req.params;
+    const { otherUserId } = req.query;
+    if (otherUserId) {
+      const messages = db.messages.filter(m => 
+        (m.fromId === userId && m.toId === otherUserId) || 
+        (m.fromId === otherUserId && m.toId === userId)
+      );
+      res.json(messages);
+    } else {
+      // Get all unique users this user has chatted with
+      const chatPartners = new Set();
+      db.messages.forEach(m => {
+        if (m.fromId === userId) chatPartners.add(m.toId);
+        if (m.toId === userId) chatPartners.add(m.fromId);
+      });
+      const partners = Array.from(chatPartners).map(id => {
+        const user = db.users.find(u => u.id === id);
+        return { id, fullName: user?.fullName || 'Unknown User' };
+      });
+      res.json(partners);
+    }
+  });
+
+  app.post("/api/messages", (req, res) => {
+    const { fromId, toId, content } = req.body;
+    const message = {
+      id: `m${Date.now()}`,
+      fromId,
+      toId,
+      content,
+      timestamp: new Date().toISOString()
+    };
+    db.messages.push(message);
+    
+    // Also log it for admin (duplicate but following current pattern)
+    db.chatLogs.push({
+      id: `c${Date.now()}`,
+      from: fromId,
+      to: toId,
+      message: content,
+      timestamp: new Date().toISOString()
+    });
+
+    res.json(message);
+  });
+
   // User Management API
   app.get("/api/admin/users", (req, res) => {
-    res.json(db.users);
+    // Enrich users with profiles
+    const usersWithProfiles = db.users.map(u => {
+      const profile = db.profiles.find(p => p.uid === u.id);
+      return { ...u, profile };
+    });
+    res.json(usersWithProfiles);
+  });
+
+  app.get("/api/admin/profiles", (req, res) => {
+    res.json(db.profiles);
   });
 
   app.patch("/api/admin/users/:id", (req, res) => {

@@ -11,7 +11,7 @@ import {
   TableHeader, 
   TableRow 
 } from "@/components/ui/table";
-import { Search, Filter, MoreVertical, Edit, Trash2, Ban, CheckCircle, Eye } from 'lucide-react';
+import { Search, Filter, MoreVertical, Edit, Trash2, Ban, CheckCircle, Eye, FileText } from 'lucide-react';
 import { toast } from 'sonner';
 import { profileService } from '@/services/profileService';
 import ProfileModal from '@/components/ProfileModal';
@@ -96,6 +96,43 @@ export default function ManageUsers() {
     }
   };
 
+  const handleExportCSV = () => {
+    if (users.length === 0) return toast.error("No data to export");
+    
+    const dataToExport = users.map(u => ({
+      id: u.id,
+      fullName: u.fullName,
+      email: u.email,
+      status: u.status,
+      package: u.package || 'free',
+      paymentStatus: u.paymentStatus || 'unpaid',
+      gender: u.profile?.gender || '',
+      birthDate: u.profile?.birthDate || '',
+      education: u.profile?.education || '',
+      occupation: u.profile?.occupation || '',
+      religion: u.profile?.religion || '',
+      caste: u.profile?.caste || '',
+      nativePlace: u.profile?.nativePlace || '',
+      state: u.profile?.state || ''
+    }));
+
+    const headers = Object.keys(dataToExport[0]);
+    const csvContent = [
+      headers.join(','),
+      ...dataToExport.map(row => headers.map(header => {
+        const val = (row as any)[header] ?? '';
+        return `"${String(val).replace(/"/g, '""')}"`;
+      }).join(','))
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `Users_Export_${new Date().toISOString().split('T')[0]}.csv`);
+    link.click();
+  };
+
   const filteredUsers = users.filter(u => 
     u.fullName.toLowerCase().includes(search.toLowerCase()) || 
     u.email.toLowerCase().includes(search.toLowerCase())
@@ -131,7 +168,9 @@ export default function ManageUsers() {
               <Button variant="outline" size="sm">
                 <Filter className="mr-2 h-4 w-4" /> Filter
               </Button>
-              <Button variant="outline" size="sm">Export CSV</Button>
+              <Button variant="outline" size="sm" onClick={handleExportCSV}>
+                <FileText className="mr-2 h-4 w-4" /> Export CSV
+              </Button>
             </div>
           </div>
         </CardHeader>

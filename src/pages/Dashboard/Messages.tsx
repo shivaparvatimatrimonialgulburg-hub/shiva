@@ -1,20 +1,67 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Send, Search, MoreVertical, Phone, Video, MessageSquare } from 'lucide-react';
-
-const MOCK_CHATS = [
-  { id: 1, name: 'Priya Sharma', lastMessage: 'Hello, I liked your profile.', time: '10:30 AM', unread: 2, online: true },
-  { id: 2, name: 'Sneha Patil', lastMessage: 'When can we talk?', time: 'Yesterday', unread: 0, online: false },
-  { id: 3, name: 'Anjali Gupta', lastMessage: 'My parents want to meet.', time: '2 days ago', unread: 0, online: true },
-];
+import { useAuth } from '@/hooks/useAuth';
+import { messageService } from '@/services/messageService';
+import { toast } from 'sonner';
 
 export default function Messages() {
-  const [selectedChat, setSelectedChat] = useState<any>(MOCK_CHATS[0]);
-  const [message, setMessage] = useState('');
+  const { user } = useAuth();
+  const [chats, setChats] = useState<any[]>([]);
+  const [selectedChat, setSelectedChat] = useState<any>(null);
+  const [messages, setMessages] = useState<any[]>([]);
+  const [messageText, setMessageText] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (user) {
+      fetchChats();
+    }
+  }, [user]);
+
+  useEffect(() => {
+    if (user && selectedChat) {
+      fetchMessages();
+      const interval = setInterval(fetchMessages, 5000); // Poll every 5s
+      return () => clearInterval(interval);
+    }
+  }, [user, selectedChat]);
+
+  const fetchChats = async () => {
+    try {
+      const data = await messageService.getChatPartners(user!.id);
+      setChats(data);
+    } catch (error) {
+      console.error("Error fetching chats:", error);
+    }
+  };
+
+  const fetchMessages = async () => {
+    try {
+      const data = await messageService.getChatMessages(user!.id, selectedChat.id);
+      setMessages(data);
+    } catch (error) {
+      console.error("Error fetching messages:", error);
+    }
+  };
+
+  const handleSend = async () => {
+    if (!messageText.trim() || !selectedChat || !user) return;
+    try {
+      setLoading(true);
+      await messageService.sendMessage(user.id, selectedChat.id, messageText);
+      setMessageText('');
+      fetchMessages();
+    } catch (error) {
+      toast.error("Failed to send message");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <div className="h-[calc(100vh-180px)] flex gap-6">
@@ -28,7 +75,7 @@ export default function Messages() {
         </CardHeader>
         <ScrollArea className="flex-1">
           <div className="divide-y">
-            {MOCK_CHATS.map((chat) => (
+            {chats.length > 0 ? chats.map((chat) => (
               <div 
                 key={chat.id}
                 onClick={() => setSelectedChat(chat)}
@@ -38,27 +85,22 @@ export default function Messages() {
               >
                 <div className="relative">
                   <Avatar>
-                    <AvatarImage src={`https://picsum.photos/seed/${chat.id + 50}/100/100`} />
-                    <AvatarFallback>{chat.name[0]}</AvatarFallback>
+                    <AvatarImage src={`https://picsum.photos/seed/${chat.id}/100/100`} />
+                    <AvatarFallback>{chat.fullName[0]}</AvatarFallback>
                   </Avatar>
-                  {chat.online && (
-                    <span className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-white rounded-full"></span>
-                  )}
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex justify-between items-start">
-                    <p className="font-bold text-sm truncate">{chat.name}</p>
-                    <span className="text-[10px] text-muted-foreground">{chat.time}</span>
+                    <p className="font-bold text-sm truncate">{chat.fullName}</p>
                   </div>
-                  <p className="text-xs text-muted-foreground truncate">{chat.lastMessage}</p>
+                  <p className="text-xs text-muted-foreground truncate">Click to view messages</p>
                 </div>
-                {chat.unread > 0 && (
-                  <span className="bg-primary text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">
-                    {chat.unread}
-                  </span>
-                )}
               </div>
-            ))}
+            )) : (
+              <div className="p-8 text-center text-muted-foreground text-sm">
+                No active conversations
+              </div>
+            )}
           </div>
         </ScrollArea>
       </Card>
@@ -70,12 +112,11 @@ export default function Messages() {
             <CardHeader className="p-4 border-b flex flex-row items-center justify-between">
               <div className="flex items-center gap-3">
                 <Avatar>
-                  <AvatarImage src={`https://picsum.photos/seed/${selectedChat.id + 50}/100/100`} />
-                  <AvatarFallback>{selectedChat.name[0]}</AvatarFallback>
+                  <AvatarImage src={`https://picsum.photos/seed/${selectedChat.id}/100/100`} />
+                  <AvatarFallback>{selectedChat.fullName[0]}</AvatarFallback>
                 </Avatar>
                 <div>
-                  <CardTitle className="text-base">{selectedChat.name}</CardTitle>
-                  <p className="text-xs text-green-500">{selectedChat.online ? 'Online' : 'Offline'}</p>
+                  <CardTitle className="text-base">{selectedChat.fullName}</CardTitle>
                 </div>
               </div>
               <div className="flex items-center gap-2">
@@ -86,31 +127,38 @@ export default function Messages() {
             </CardHeader>
             <ScrollArea className="flex-1 p-6">
               <div className="space-y-4">
-                <div className="flex justify-start">
-                  <div className="bg-muted p-3 rounded-2xl rounded-tl-none max-w-[70%]">
-                    <p className="text-sm">{selectedChat.lastMessage}</p>
-                    <span className="text-[10px] text-muted-foreground mt-1 block">10:30 AM</span>
+                {messages.map((msg) => (
+                  <div key={msg.id} className={`flex ${msg.fromId === user?.id ? 'justify-end' : 'justify-start'}`}>
+                    <div className={`p-3 rounded-2xl max-w-[70%] ${
+                      msg.fromId === user?.id 
+                        ? 'bg-primary text-primary-foreground rounded-tr-none' 
+                        : 'bg-muted rounded-tl-none'
+                    }`}>
+                      <p className="text-sm">{msg.content}</p>
+                      <span className={`text-[10px] mt-1 block ${msg.fromId === user?.id ? 'opacity-70' : 'text-muted-foreground'}`}>
+                        {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                    </div>
                   </div>
-                </div>
-                <div className="flex justify-end">
-                  <div className="bg-primary text-primary-foreground p-3 rounded-2xl rounded-tr-none max-w-[70%]">
-                    <p className="text-sm">Hi! Yes, I would love to talk more about our interests.</p>
-                    <span className="text-[10px] opacity-70 mt-1 block">10:35 AM</span>
+                ))}
+                {messages.length === 0 && (
+                  <div className="text-center py-10 text-muted-foreground text-sm">
+                    No messages yet. Say hello!
                   </div>
-                </div>
+                )}
               </div>
             </ScrollArea>
-            <div className="p-4 border-t flex gap-2">
+            <form onSubmit={(e) => { e.preventDefault(); handleSend(); }} className="p-4 border-t flex gap-2">
               <Input 
-                value={message}
-                onChange={(e) => setMessage(e.target.value)}
+                value={messageText}
+                onChange={(e) => setMessageText(e.target.value)}
                 placeholder="Type your message..." 
                 className="flex-1 bg-muted/50 border-none"
               />
-              <Button size="icon" className="rounded-full bg-primary">
+              <Button type="submit" size="icon" disabled={loading} className="rounded-full bg-primary">
                 <Send className="h-4 w-4" />
               </Button>
-            </div>
+            </form>
           </>
         ) : (
           <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground">

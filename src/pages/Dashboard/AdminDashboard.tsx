@@ -138,6 +138,104 @@ export default function AdminDashboard() {
     }
   };
 
+  const exportToCSV = (data: any[], filename: string) => {
+    if (data.length === 0) {
+      toast.error("No data available to export");
+      return;
+    }
+    const headers = Object.keys(data[0]);
+    const csvContent = [
+      headers.join(','),
+      ...data.map(row => headers.map(header => {
+        let value = row[header] === null || row[header] === undefined ? '' : row[header];
+        if (typeof value === 'object') value = JSON.stringify(value);
+        return `"${String(value).replace(/"/g, '""')}"`;
+      }).join(','))
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    if (link.download !== undefined) {
+      const url = URL.createObjectURL(blob);
+      link.setAttribute('href', url);
+      link.setAttribute('download', `${filename}_${new Date().toISOString().split('T')[0]}.csv`);
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+  };
+
+  const handleExportUsers = () => {
+    const dataToExport = users.map(u => ({
+      id: u.id,
+      fullName: u.fullName,
+      email: u.email,
+      status: u.status,
+      package: u.package || 'free',
+      paymentStatus: u.paymentStatus || 'unpaid',
+      gender: u.profile?.gender || '',
+      birthDate: u.profile?.birthDate || '',
+      maritalStatus: u.profile?.maritalStatus || '',
+      religion: u.profile?.religion || '',
+      caste: u.profile?.caste || '',
+      occupation: u.profile?.occupation || '',
+      nativePlace: u.profile?.nativePlace || '',
+      state: u.profile?.state || '',
+      annualIncome: u.profile?.annualIncome || '',
+      createdAt: u.createdAt
+    }));
+    exportToCSV(dataToExport, 'User_Profiles');
+  };
+
+  const handleExportPayments = () => {
+    const dataToExport = payments.map(p => ({
+      transactionId: p.id,
+      date: new Date(p.timestamp).toLocaleString(),
+      userId: p.userId,
+      userName: p.userName,
+      userEmail: p.email,
+      amount: p.amount / 100,
+      currency: 'INR',
+      status: p.status,
+      plan: p.plan || 'N/A'
+    }));
+    exportToCSV(dataToExport, 'Payment_Report');
+  };
+
+  const handleExportChats = () => {
+    const dataToExport = logs.chats.map((chat: any) => ({
+      id: chat.id,
+      fromId: chat.from,
+      fromName: chat.fromName,
+      toId: chat.to,
+      toName: chat.toName,
+      message: chat.message,
+      timestamp: new Date(chat.timestamp).toLocaleString()
+    }));
+    exportToCSV(dataToExport, 'Chat_History_Report');
+  };
+
+  const handleExportLogs = () => {
+    const dataToExport = logs.requests.map((log: any) => ({
+      id: log.id,
+      userId: log.userId,
+      action: log.action,
+      target: log.target,
+      timestamp: new Date(log.timestamp).toLocaleString()
+    }));
+    exportToCSV(dataToExport, 'User_Activity_Logs');
+  };
+
+  const handleExportReports = () => {
+    const reportsToExport = [
+      { id: 'r1', reporterName: 'Rahul P.', reportedName: 'Fake Profile 1', reason: 'Fake Photos', status: 'pending', date: '2026-04-09' },
+      { id: 'r2', reporterName: 'Sneha K.', reportedName: 'User 123', reason: 'Abusive Behavior', status: 'resolved', date: '2026-04-08' },
+      { id: 'r3', reporterName: 'Vijay S.', reportedName: 'Scammer X', reason: 'Asking for Money', status: 'pending', date: '2026-04-10' },
+    ];
+    exportToCSV(reportsToExport, 'Profile_Reports');
+  };
+
   const fetchData = async () => {
     try {
       const [settingsRes, masterRes, usersRes, reqLogsRes, chatLogsRes, ticketsRes, connectReqsRes, paymentsRes] = await Promise.all([
@@ -483,6 +581,7 @@ export default function AdminDashboard() {
           <TabsTrigger value="managers">Managers</TabsTrigger>
           <TabsTrigger value="connect-requests">Connect Requests</TabsTrigger>
           <TabsTrigger value="logs">Logs</TabsTrigger>
+          <TabsTrigger value="chats">Chat Monitor</TabsTrigger>
           <TabsTrigger value="reports">Reports</TabsTrigger>
           <TabsTrigger value="support">Support</TabsTrigger>
         </TabsList>
@@ -709,9 +808,14 @@ export default function AdminDashboard() {
 
         <TabsContent value="users">
           <Card className="border-none shadow-sm">
-            <CardHeader>
-              <CardTitle className="text-2xl font-serif text-primary">User Management</CardTitle>
-              <CardDescription>Verify, edit, or manage user accounts.</CardDescription>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <div>
+                <CardTitle className="text-2xl font-serif text-primary">User Management</CardTitle>
+                <CardDescription>Verify, edit, or manage user accounts.</CardDescription>
+              </div>
+              <Button variant="outline" size="sm" onClick={handleExportUsers}>
+                <FileText className="mr-2 h-4 w-4" /> Download CSV
+              </Button>
             </CardHeader>
             <CardContent>
               <Table>
@@ -840,11 +944,16 @@ export default function AdminDashboard() {
 
         <TabsContent value="payments">
           <Card className="border-none shadow-sm">
-            <CardHeader>
-              <CardTitle className="text-2xl font-serif text-primary flex items-center">
-                <CreditCard className="mr-2 h-6 w-6" /> Payment Transactions
-              </CardTitle>
-              <CardDescription>Monitor payment status and handle refunds.</CardDescription>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <div>
+                <CardTitle className="text-2xl font-serif text-primary flex items-center">
+                  <CreditCard className="mr-2 h-6 w-6" /> Payment Transactions
+                </CardTitle>
+                <CardDescription>Monitor payment status and handle refunds.</CardDescription>
+              </div>
+              <Button variant="outline" size="sm" onClick={handleExportPayments}>
+                <FileText className="mr-2 h-4 w-4" /> Export CSV
+              </Button>
             </CardHeader>
             <CardContent>
               <div className="space-y-6">
@@ -1080,7 +1189,13 @@ export default function AdminDashboard() {
             </TabsList>
             <TabsContent value="requests">
               <Card className="border-none shadow-sm">
-                <CardContent className="pt-6">
+                <CardHeader className="flex flex-row items-center justify-between pb-2">
+                  <CardTitle className="text-lg font-serif">System Logs</CardTitle>
+                  <Button variant="ghost" size="sm" onClick={handleExportLogs}>
+                    <FileText className="mr-2 h-4 w-4" /> Export
+                  </Button>
+                </CardHeader>
+                <CardContent className="pt-0">
                   <Table>
                     <TableHeader>
                       <TableRow>
@@ -1106,7 +1221,13 @@ export default function AdminDashboard() {
             </TabsContent>
             <TabsContent value="chats">
               <Card className="border-none shadow-sm">
-                <CardContent className="pt-6">
+                <CardHeader className="flex flex-row items-center justify-between pb-2">
+                  <CardTitle className="text-lg font-serif">Chat Audit Logs</CardTitle>
+                  <Button variant="ghost" size="sm" onClick={handleExportChats}>
+                    <FileText className="mr-2 h-4 w-4" /> Export
+                  </Button>
+                </CardHeader>
+                <CardContent className="pt-0">
                   <Table>
                     <TableHeader>
                       <TableRow>
@@ -1133,13 +1254,86 @@ export default function AdminDashboard() {
           </Tabs>
         </TabsContent>
 
+        <TabsContent value="chats">
+          <Card className="border-none shadow-sm">
+            <CardHeader className="flex flex-row items-center justify-between">
+              <div>
+                <CardTitle className="text-2xl font-serif text-primary flex items-center">
+                  <MessageSquare className="mr-2 h-6 w-6" /> User Chat Monitor
+                </CardTitle>
+                <CardDescription>View all conversations between users to ensure community safety.</CardDescription>
+              </div>
+              <Button variant="outline" size="sm" onClick={handleExportChats}>
+                <FileText className="mr-2 h-4 w-4" /> Download Report
+              </Button>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                <div className="relative">
+                  <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input 
+                    className="pl-9" 
+                    placeholder="Search by name, ID or message content..." 
+                  />
+                </div>
+                <div className="rounded-md border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>From User</TableHead>
+                        <TableHead>To User</TableHead>
+                        <TableHead>Message Content</TableHead>
+                        <TableHead>Sent At</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {logs.chats.map((chat: any) => (
+                        <TableRow key={chat.id}>
+                          <TableCell>
+                            <div className="font-medium">{chat.fromName}</div>
+                            <div className="text-[10px] text-muted-foreground">ID: {chat.from}</div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="font-medium">{chat.toName}</div>
+                            <div className="text-[10px] text-muted-foreground">ID: {chat.to}</div>
+                          </TableCell>
+                          <TableCell className="max-w-md">
+                            <div className="bg-muted/50 p-2 rounded text-sm italic">
+                              "{chat.message}"
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-xs text-muted-foreground">
+                            {new Date(chat.timestamp).toLocaleString()}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                      {logs.chats.length === 0 && (
+                        <TableRow>
+                          <TableCell colSpan={4} className="text-center py-10 text-muted-foreground">
+                            No chat logs available.
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
         <TabsContent value="reports">
           <Card className="border-none shadow-sm">
-            <CardHeader>
-              <CardTitle className="text-2xl font-serif text-primary flex items-center">
-                <AlertTriangle className="mr-2 h-6 w-6" /> Profile Reports
-              </CardTitle>
-              <CardDescription>Manage and review reports submitted by users.</CardDescription>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <div>
+                <CardTitle className="text-2xl font-serif text-primary flex items-center">
+                  <AlertTriangle className="mr-2 h-6 w-6" /> Profile Reports
+                </CardTitle>
+                <CardDescription>Manage and review reports submitted by users.</CardDescription>
+              </div>
+              <Button variant="outline" size="sm" onClick={handleExportReports}>
+                <FileText className="mr-2 h-4 w-4" /> Export CSV
+              </Button>
             </CardHeader>
             <CardContent>
               <div className="overflow-x-auto">
